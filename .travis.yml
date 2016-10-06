@@ -1,0 +1,10 @@
+language: java
+jdk:
+- oraclejdk8
+deploy:
+  provider: heroku
+  api_key:
+    secure: LQtoMHcIssptMxbpHPto9zVbKG54Vq4K7s/942ll+YrtNUER+dEbgCbpCuto26vN1aG0IgJUM8fcHz6apG97DpW5koF/R+1ClGp+ymtYII754iAIRgFxPXcjoYOq4dDmIrbu8+6SIkBnbwOBatjAQJt4i8iQdRz+M25hj6JChhR0hqUb1VqLKFI+w1HkDXn5bO9eZcYGoNQEIdpRix1iw28kO2LEtqGmRh0Z4KtZ8kfC1dWjEbjk4AhZgDEzG3bq9SxhVTSH57BpoGJEY/Syf7gVKlH0ZvWhzBZpylVLIEQ+8wKK92ylgGbtRskYuSugSMlUvV5THJUua9KR8DeLq6rGzH0st5pKI2iXyLFeKko7VOttnap3+1cCadlRejZBP8AeqPJJa8xTS8yhTL3zxrW2Big0sSWQyE71AE8KmLQVAhnkKW/qieVU57MPP3b+7/+Sbk+Ce6Z99kspnaIe9Cm6/6X06NyPKJiLCnT9EQxrqjR7JxJxnQOshoNqO4QsoiluHDg5YO0gNzAESE2LT94OiYcXAyBX2Y8ZoAo373wJ3iHf3LLLaBcFqJLsrLzV3xZBlleacJD/f0d5Ii1yvZ4tsvw3Kt4hpCyYrUTUUrX6SsHhnTu64/VNJLrjlCMHWuV7yi8w40ipcBKJbNTFwXlpk18j6IdIhoiw85BqIWI=
+  app: brain404-backend
+  on:
+    repo: Brain404/maze-09-2016
