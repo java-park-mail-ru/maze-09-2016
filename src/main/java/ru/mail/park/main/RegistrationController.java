@@ -1,86 +1,136 @@
 package ru.mail.park.main;
 
-import org.springframework.beans.factory.annotation.Autowired;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
-import ru.mail.park.exceptions.ErrorResponse;
-import ru.mail.park.model.UserProfile;
-import ru.mail.park.services.AccountService;
-import ru.mail.park.services.SessionService;
+import ru.mail.park.exceptions.ErrorMsg;
+import ru.mail.park.models.User;
 
 import javax.servlet.http.HttpSession;
+import javax.validation.Valid;
+import javax.validation.constraints.NotNull;
+
+import static org.springframework.http.ResponseEntity.ok;
 
 /**
- * Created by Solovyev on 06/09/16.
+ * Created by kirrok on 06/09/16.
  */
 
 @RestController
-public class RegistrationController {
-    private final AccountService accountService;
-    private final SessionService sessionService;
+public class RegistrationController extends AbstractAccountController {
+    private final String USER_ID = "id";
 
-    @Autowired
-    public RegistrationController(AccountService accountService,
-                                  SessionService sessionService) {
-        this.accountService = accountService;
-        this.sessionService = sessionService;
+    @RequestMapping(path = "/api/session", method = RequestMethod.GET)
+    public ResponseEntity<ResponseBody> sessionCheck(HttpSession session) {
+        final Long selfId = (Long)session.getAttribute(USER_ID);
+        if (selfId == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(new ResponseBody(ErrorMsg.NOT_LOGGED_IN_MSG));
+        }
+        return ok(new ResponseBody(selfId));
     }
 
     @RequestMapping(path = "/api/registration", method = RequestMethod.POST)
-    public ResponseEntity registration(@RequestBody RegistrationRequest body) {
-
+    public ResponseEntity<ResponseBody> registration(@RequestBody @Valid UserDataRequest body, HttpSession session) {
         final String login = body.getLogin();
         final String password = body.getPassword();
-        final String email = body.getEmail();
+        User user = accountService.getUserByLogin(login);
 
-        if (StringUtils.isEmpty(login) || StringUtils.isEmpty(password) ||
-                StringUtils.isEmpty(email)) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(new ErrorResponse(HttpStatus.BAD_REQUEST.toString(),"Invalid input"));
+        if (user != null) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(new ResponseBody(ErrorMsg.USER_ALREADY_EXISTS_MSG));
         }
+        user = new User(login, password);
+        final Long id = accountService.addUser(user);
 
-        final UserProfile existingUser = accountService.getUser(login);
-
-        if (existingUser != null) {
-            return ResponseEntity.status(HttpStatus.NOT_ACCEPTABLE).body(new ErrorResponse(HttpStatus.NOT_ACCEPTABLE.toString(),"User already exist"));
+        if (id == null) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ResponseBody(ErrorMsg.SERVER_ERROR_MSG));
         }
+        session.setAttribute(USER_ID, id);
 
-        accountService.addUser(login, password, email);
-        return ResponseEntity.ok(new SuccessResponse(login));
+        return ok(new ResponseBody(id));
     }
 
     @RequestMapping(path = "/api/auth", method = RequestMethod.POST)
-    public ResponseEntity auth(@RequestBody AuthorizationRequest body,
-                               HttpSession httpSession) {
-
+    public ResponseEntity<ResponseBody> auth(@RequestBody @Valid UserDataRequest body, HttpSession session) {
         final String login = body.getLogin();
-        final String password = body.getPassword();
 
-        if (StringUtils.isEmpty(login) || StringUtils.isEmpty(password)) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(new ErrorResponse(HttpStatus.BAD_REQUEST.toString(),"Invalid input"));
+        final User user = accountService.getUserByLogin(login);
+
+        if (user == null || !accountService.passwordIsCorrect(user, body.getPassword())) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(new ResponseBody(ErrorMsg.AUTHORIZATION_ERROR_MSG));
         }
+        session.setAttribute(USER_ID, user.getId());
 
-        final UserProfile user = accountService.getUser(login);
-
-        if (user == null || !user.getPassword().equals(password)) {
-            return ResponseEntity.status(HttpStatus.NOT_ACCEPTABLE).body(new ErrorResponse(HttpStatus.NOT_ACCEPTABLE.toString(), "Wrong login or password"));
-
-        }
-        sessionService.addUser(httpSession.getId(), user);
-        return ResponseEntity.ok(new SuccessResponse(user.getLogin()));
+        return ok(new ResponseBody(user.getId()));
     }
 
-    private static final class AuthorizationRequest {
-        private String login;
-        private String password;
+    @RequestMapping(path = "/api/logout", method = RequestMethod.DELETE)
+    public ResponseEntity<ResponseBody> logout(HttpSession session) {
+        final Long selfId = (Long) session.getAttribute(USER_ID);
+        if (selfId == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(new ResponseBody(ErrorMsg.NOT_LOGGED_IN_MSG));
+        }
+        session.removeAttribute(USER_ID);
+        return ok(new ResponseBody(selfId));
+    }
 
-        private AuthorizationRequest() {
+    @RequestMapping(path = "/api/user/{id}", method = RequestMethod.GET)
+    public ResponseEntity<?> getUser(@PathVariable(USER_ID) long userId, HttpSession session) {
+        final Long selfId = (Long) session.getAttribute(USER_ID);
+        if (selfId == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(new ResponseBody(ErrorMsg.NOT_LOGGED_IN_MSG));
+        }
+        final User user = accountService.getUserById(userId);
+        if (user == null) {
+            return ResponseEntity.status(HttpStatus.NO_CONTENT)
+                    .body(new ResponseBody(ErrorMsg.USER_NOT_EXIST));
+        }
+        return ResponseEntity.ok(user);
+    }
+
+    @RequestMapping(path = "/api/user", method = RequestMethod.PUT)
+    public ResponseEntity<ResponseBody> updateUser(@RequestBody @Valid UserDataRequest body, HttpSession session) {
+        final Long selfId = (Long) session.getAttribute(USER_ID);
+        if (selfId == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(new ResponseBody(ErrorMsg.NOT_LOGGED_IN_MSG));
         }
 
-        private AuthorizationRequest(String login, String password) {
-            this.login = login;
-            this.password = password;
+        final User newUserData = new User(body.getLogin(),body.getPassword());
+
+        newUserData.setId(selfId);
+        accountService.updateUser(newUserData);
+
+        return ResponseEntity.ok(new ResponseBody(selfId));
+    }
+
+    @RequestMapping(path = "/api/user", method = RequestMethod.DELETE)
+    public ResponseEntity<ResponseBody> deleteUser(HttpSession session) {
+        final Long selfId = (Long) session.getAttribute(USER_ID);
+        if (selfId == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(new ResponseBody(ErrorMsg.NOT_LOGGED_IN_MSG));
+        }
+
+        accountService.deleteUser(selfId);
+        session.removeAttribute(USER_ID);
+
+        return ResponseEntity.ok(new ResponseBody(selfId));
+    }
+
+    private static final class UserDataRequest {
+        @NotNull
+        private String login;
+        @NotNull
+        private String password;
+
+        private UserDataRequest() {
         }
 
         public String getLogin() {
@@ -92,43 +142,26 @@ public class RegistrationController {
         }
     }
 
-    private static final class RegistrationRequest {
-        private String login;
-        private String password;
-        private String email;
+    private static final class ResponseBody {
+        @JsonInclude(JsonInclude.Include.NON_DEFAULT)
+        private long id;
+        @JsonInclude(JsonInclude.Include.NON_NULL)
+        private String msg;
 
-        private RegistrationRequest() {
+        private ResponseBody(long id) {
+            this.id = id;
         }
 
-        private RegistrationRequest(String login, String password, String email) {
-            this.login = login;
-            this.password = password;
-            this.email = email;
+        private ResponseBody(String msg) {
+            this.msg = msg;
         }
 
-        public String getLogin() {
-            return login;
+        public long getId() {
+            return id;
         }
 
-        public String getPassword() {
-            return password;
-        }
-
-        public String getEmail() {
-            return email;
-        }
-    }
-
-    private static final class SuccessResponse {
-        private String login;
-
-        private SuccessResponse(String login) {
-            this.login = login;
-        }
-
-        @SuppressWarnings("unused")
-        public String getLogin() {
-            return login;
+        public String getMsg() {
+            return msg;
         }
     }
 }
